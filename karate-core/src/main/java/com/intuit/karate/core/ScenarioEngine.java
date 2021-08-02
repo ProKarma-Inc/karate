@@ -23,6 +23,11 @@
  */
 package com.intuit.karate.core;
 
+import com.atlassian.oai.validator.report.MessageResolver;
+import com.atlassian.oai.validator.report.ValidationReport;
+import com.atlassian.oai.validator.schema.CustomDateTimeFormatter;
+import com.atlassian.oai.validator.schema.SchemaValidator;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.intuit.karate.FileUtils;
 import com.intuit.karate.Json;
 import com.intuit.karate.JsonUtils;
@@ -32,6 +37,7 @@ import com.intuit.karate.Match;
 import com.intuit.karate.RuntimeHook;
 import com.intuit.karate.StringUtils;
 import com.intuit.karate.XmlUtils;
+import com.intuit.karate.core.Variable.Type;
 import com.intuit.karate.driver.Driver;
 import com.intuit.karate.driver.DriverOptions;
 import com.intuit.karate.driver.Key;
@@ -39,10 +45,22 @@ import com.intuit.karate.graal.JsEngine;
 import com.intuit.karate.graal.JsFunction;
 import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.http.*;
+import com.intuit.karate.resource.ResourceUtils;
 import com.intuit.karate.shell.Command;
 import com.intuit.karate.template.KarateTemplateEngine;
 import com.intuit.karate.template.TemplateUtils;
 import com.jayway.jsonpath.PathNotFoundException;
+import com.pk.atf.OASSchemaValidator;
+
+import io.swagger.parser.OpenAPIParser;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.media.ArraySchema;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.parser.core.models.ParseOptions;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
+
 import org.graalvm.polyglot.Value;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
@@ -2201,6 +2219,47 @@ public class ScenarioEngine {
             // including arrow functions e.g. x => x + 1
             return evalJs(text);
         }
+    }
+
+    public void matchSchema(String value, String schema) {							//response from URL, OAS contract info
+    	
+    	schema=schema.trim();
+    	String schemaFilePath = vars.get("schemaPath").getAsString();
+    	String schemaFileName = schemaFilePath.substring(schemaFilePath.lastIndexOf("/"));
+    	String schemaName = schema.substring(schema.lastIndexOf(".")+1);
+    	
+    	if(vars.containsKey(value) && !schemaFileName.isEmpty() && !schemaName.isEmpty()) {
+    		Variable actual = vars.get(value);										//api response 
+    		String objectToValidate = vars.get(value).getAsString();				//api response object to compare
+    		String oasSchema = vars.get("schemaFile").getAsString(); 				//OAS Contract to validate with the response received 
+    		
+    		final ParseOptions parseOptions = new ParseOptions();
+    		parseOptions.setResolve(true);
+    		
+    		SwaggerParseResult swaggerParseResult = new OpenAPIParser().readContents(oasSchema, null, parseOptions);	//parse schema to swagger provided format
+    		if(!swaggerParseResult.getMessages().isEmpty()) {
+    			throw new RuntimeException("OAS contract parsing failed! "+swaggerParseResult.getMessages().toString());
+    		}
+//    		CustomDateTimeFormatter customDateTimeFormatter
+    		OpenAPI openAPI = swaggerParseResult.getOpenAPI();															//swagger OpenAPI 
+    		SchemaValidator schemaValidator = new SchemaValidator(openAPI, new MessageResolver());						//prepare the SchemaValidator with the obtained OAS contract
+    		Schema schemaToValidate = openAPI.getComponents().getSchemas().get(schemaName);
+    		if(schemaToValidate==null) {
+    			throw new RuntimeException("Schema is not availble with schemaName: "+schemaName);
+    		}
+    		
+    		OASSchemaValidator oasSchemaValidator = new OASSchemaValidator();											//atlassian comparo class for source API and target data
+
+    		if(actual.type == Type.MAP) {																							
+    			oasSchemaValidator.schemaValidatorMap(schemaValidator, objectToValidate, schemaToValidate);
+    		}
+    		if(actual.type == Type.LIST) {
+    			oasSchemaValidator.schemaValidatorList(schemaValidator, actual, schemaToValidate);
+    		}
+    		
+    	}else {
+    		throw new RuntimeException("Something Worng with schemaFileName: "+schemaFileName +"\n or schemaName: "+schemaName);
+    	}
     }
 
 }

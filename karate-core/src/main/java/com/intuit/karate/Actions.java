@@ -147,5 +147,7 @@ public interface Actions {
     void driver(String exp);
 
     void robot(String exp);
+    
+    void matchSchema(String value, String schema);
 
 }
