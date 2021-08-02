@@ -405,5 +405,11 @@ public class ScenarioActions implements Actions {
     public void robot(String exp) {
         engine.robot(exp);
     }
+    
+    @Override
+    @When("^matchSchema (.+) == (.*)")
+    public void matchSchema(String value, String schema) {
+    	engine.matchSchema(value, schema);
+    }
 
 }
