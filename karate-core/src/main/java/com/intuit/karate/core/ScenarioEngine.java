@@ -23,6 +23,8 @@
  */
 package com.intuit.karate.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intuit.karate.FileUtils;
 import com.intuit.karate.Json;
 import com.intuit.karate.JsonUtils;
@@ -39,10 +41,21 @@ import com.intuit.karate.graal.JsEngine;
 import com.intuit.karate.graal.JsFunction;
 import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.http.*;
+import com.intuit.karate.resource.ResourceUtils;
 import com.intuit.karate.shell.Command;
 import com.intuit.karate.template.KarateTemplateEngine;
 import com.intuit.karate.template.TemplateUtils;
 import com.jayway.jsonpath.PathNotFoundException;
+import com.pk.atf.actor.APIKeyAuthenticaton;
+import com.pk.atf.actor.ActorAuthInfo;
+import com.pk.atf.actor.AuthStrategy;
+import com.pk.atf.actor.AuthenticationInfo;
+import com.pk.atf.actor.Authenticator;
+import com.pk.atf.actor.BasicAuthenticaton;
+import com.pk.atf.actor.OAuthClientCredAuthenticaton;
+import com.pk.atf.actor.OAuthRefreshTokenAuthenticaton;
+import com.pk.atf.actor.OAuthResourcePasswordAuthenticaton;
+
 import org.graalvm.polyglot.Value;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
@@ -60,6 +73,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  *
@@ -2202,5 +2216,75 @@ public class ScenarioEngine {
             return evalJs(text);
         }
     }
+
+	public void authenticate(String actor) {
+		String environment = System.getenv("env");
+		String configFile = "authenticationInfo";
+		if(!StringUtils.isBlank(environment))
+			configFile = configFile+"-"+environment+".json";
+		else
+			configFile = configFile+"-dev.json";
+			
+		AuthenticationInfo authenticationInfo=null;
+		try {
+			String authenticationInfoString = ResourceUtils.classPathResourceToString(configFile);
+			ObjectMapper mapper=new ObjectMapper();
+			authenticationInfo = mapper.readValue(authenticationInfoString, AuthenticationInfo.class);
+		} catch (Exception e) {
+			throw new RuntimeException("Check Configuration File, File is not available with filename "+configFile +
+					" or invalid json file");
+		}
+		List<ActorAuthInfo> actorAuthInfoList = authenticationInfo
+												.getActorAuthInfo()
+												.stream()
+												.filter(p->p.getActor().equals(actor))
+												.collect(Collectors.toList());
+		if(actorAuthInfoList.size()==0) {
+			throw new RuntimeException("Authentication configuration is not available for actor "+actor);
+		}
+		if(actorAuthInfoList.size()>1) {
+			throw new RuntimeException("More than one authentication configuration defined for actor "+actor);
+		}
+		ActorAuthInfo actorAuthInfo = actorAuthInfoList.get(0);
+		JsonNode authStrategies = actorAuthInfo.getAuthStrategies();
+		if (authStrategies==null || authStrategies.size()==0) {
+			throw new RuntimeException("Authentication strategy not defined for actor "+actor);
+		}
+		for (JsonNode jsonNode : authStrategies) {
+			AuthStrategy authStrategy =  AuthStrategy.valueOf(jsonNode.get("authStrategy").asText());
+			Authenticator authenticator;
+			JsonNode authInfo = jsonNode.get("authInfo");
+			HttpClient client = runtime.featureRuntime.suite.clientFactory.create(this);
+			invokeAuthenticator(authStrategy, authInfo, client);
+		}
+	}
+
+	private void invokeAuthenticator(AuthStrategy authStrategy, JsonNode authInfo, HttpClient client) {
+		Authenticator authenticator;
+		switch (authStrategy) {
+		case Basic:
+			authenticator = new BasicAuthenticaton();
+			authenticator.authenticate(requestBuilder,authInfo,null);
+			break;
+		case OAuthClientCred:
+			authenticator=new OAuthClientCredAuthenticaton();
+			authenticator.authenticate(requestBuilder, authInfo,client);
+			break;
+		case OAuthResourcePassword:
+			authenticator=new OAuthResourcePasswordAuthenticaton();
+			authenticator.authenticate(requestBuilder, authInfo,client);
+			break;
+		case APIKey:
+			authenticator=new APIKeyAuthenticaton();
+			authenticator.authenticate(requestBuilder, authInfo, null);
+			break;
+		case OAuthRefreshToken:
+			authenticator=new OAuthRefreshTokenAuthenticaton();
+			authenticator.authenticate(requestBuilder, authInfo, client);
+			break;
+		default:
+			break;
+		}		
+	}
 
 }

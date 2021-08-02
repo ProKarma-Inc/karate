@@ -406,4 +406,10 @@ public class ScenarioActions implements Actions {
         engine.robot(exp);
     }
 
+	@Override
+	@When("^actor (.+)")
+	public void actor(String actor) {
+		engine.authenticate(actor);
+	}
+
 }
