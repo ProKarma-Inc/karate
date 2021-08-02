@@ -148,6 +148,8 @@ public interface Actions {
 
     void robot(String exp);
     
+    void actor(String actor);
+
     void matchSchema(String value, String schema);
 
 }

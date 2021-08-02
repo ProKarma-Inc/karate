@@ -412,4 +412,10 @@ public class ScenarioActions implements Actions {
     	engine.matchSchema(value, schema);
     }
 
+	@Override
+	@When("^actor (.+)")
+	public void actor(String actor) {
+		engine.authenticate(actor);
+	}
+
 }
