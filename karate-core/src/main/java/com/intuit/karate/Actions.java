@@ -150,4 +150,6 @@ public interface Actions {
     
     void actor(String actor);
 
+    void matchSchema(String value, String schema);
+
 }
